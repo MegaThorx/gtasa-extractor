@@ -6,16 +6,16 @@ use clap::Parser;
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
 struct Args {
-    #[arg(short, long, default_value = "./paths")]
+    #[arg(long, default_value = "./paths")]
     path: String,
 
-    #[arg(short, long)]
+    #[arg(long)]
     uri: String,
 
-    #[arg(short, long)]
+    #[arg(long)]
     username: String,
 
-    #[arg(short, long)]
+    #[arg(long)]
     password: String,
 }
 
@@ -110,10 +110,11 @@ async fn main() {
     let mut index = 1;
     for chunk in all_nodes.chunks(BATCH_SIZE) {
         println!(
-            "Processing relationship chunk {} of {}",
+            "Processing node chunk {} of {}",
             index,
-            (all_relationships.len() + BATCH_SIZE - 1) / BATCH_SIZE
+            (all_nodes.len() + BATCH_SIZE - 1) / BATCH_SIZE
         );
+        index += 1;
         let mut nodes_list = BoltList::new();
         for node_map in chunk {
             nodes_list.push(BoltType::Map(node_map.clone()));
@@ -163,7 +164,17 @@ async fn main() {
             .run(query("UNWIND $rels AS relData \
                 MATCH (from:PathNode {area_id: relData.from_area_id, node_id: relData.from_node_id}) \
                 MATCH (to:PathNode {area_id: relData.to_area_id, node_id: relData.to_node_id}) \
-                CREATE (from)-[:CONNECTS_TO {length: relData.length}]->(to)")
+                CREATE (from)-[:CONNECTS_TO {length: relData.length, is_highway: from.is_highway AND to.is_highway }]->(to)")
+                .param("rels", BoltType::List(rels_list.clone())))
+            .await
+            .unwrap();
+
+
+        graph
+            .run(query("UNWIND $rels AS relData \
+                MATCH (from:PathNode {area_id: relData.from_area_id, node_id: relData.from_node_id, is_highway: false }) \
+                MATCH (to:PathNode {area_id: relData.to_area_id, node_id: relData.to_node_id, is_highway: false }) \
+                CREATE (from)-[:NOT_HIGHWAY {length: relData.length }]->(to)")
                 .param("rels", BoltType::List(rels_list)))
             .await
             .unwrap();
